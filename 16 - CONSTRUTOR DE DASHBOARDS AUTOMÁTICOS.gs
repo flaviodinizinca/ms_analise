@@ -16,9 +16,31 @@ function gerarPainelPresidencial() {
     return;
   }
 
+  // Filtrar dados para considerar apenas a partir de 27 de Março de 2026
+  var dadosHistFiltrados = [];
+  var dataCorte = new Date(2026, 2, 27); 
+  dataCorte.setHours(0,0,0,0);
+
+  for (var i = 1; i < dadosHist.length; i++) {
+    var dataLinha = new Date(dadosHist[i][0]);
+    if (!(dataLinha instanceof Date) || isNaN(dataLinha)) continue;
+    
+    var dataComparacao = new Date(dataLinha.getTime());
+    dataComparacao.setHours(0,0,0,0);
+
+    if (dataComparacao >= dataCorte) {
+      dadosHistFiltrados.push(dadosHist[i]);
+    }
+  }
+
+  if (dadosHistFiltrados.length === 0) {
+    ui.alert('Atenção', 'Não há dados no histórico a partir de 27/03/2026 para gerar o painel.', ui.ButtonSet.OK);
+    return;
+  }
+
   // 1. Descobrir a Data Inicial e a Data Atual
-  var dataInicial = dadosHist[1][0];
-  var dataAtual = dadosHist[dadosHist.length - 1][0];
+  var dataInicial = dadosHistFiltrados[0][0];
+  var dataAtual = dadosHistFiltrados[dadosHistFiltrados.length - 1][0];
   
   function formatarData(data) {
     if (!data || !(data instanceof Date)) return String(data);
@@ -35,7 +57,9 @@ function gerarPainelPresidencial() {
     "DISUP - Adesão - Pesquisa",
     "DISUP - Assinatura da ATA de SRP",
     "SEAL - Licitação marcada",
-    "SEAL - Pregão em andamento"
+    "SEAL - Pregão em andamento",
+    "SECOM - Pesquisa de preços",
+    "SECOM - Pesquisa em conclusao"
   ];
 
   // 2. Processar os Dados (Sintético, Analítico e Temporal)
@@ -46,31 +70,28 @@ function gerarPainelPresidencial() {
   var mapaEvolucaoTemporal = {}; 
   var mapaEvolucaoAnalitico = {}; 
 
-  for (var i = 1; i < dadosHist.length; i++) {
-    var dataLinhaStr = formatarData(dadosHist[i][0]);
-    var statusCompleto = String(dadosHist[i][1]).trim();
-    var qtd = parseBRNumber(dadosHist[i][2]);
+  for (var j = 0; j < dadosHistFiltrados.length; j++) {
+    var dataLinhaStr = formatarData(dadosHistFiltrados[j][0]);
+    var statusCompleto = String(dadosHistFiltrados[j][1]).trim();
+    var qtd = parseBRNumber(dadosHistFiltrados[j][2]);
     
-    // Extrai o Setor (tudo antes do primeiro hífen)
     var setor = statusCompleto;
     if (statusCompleto.indexOf('-') !== -1) {
       setor = statusCompleto.split('-')[0].trim();
     }
     
-    // --- Lógica das Visões Sintética e Analítica (Tabelas) ---
     if (!mapaSintetico[setor]) mapaSintetico[setor] = { inicio: 0, atual: 0 };
     if (!mapaAnalitico[statusCompleto]) mapaAnalitico[statusCompleto] = { inicio: 0, atual: 0 };
     
-    if (formatarData(dadosHist[i][0]) === strDataInicial) {
+    if (formatarData(dadosHistFiltrados[j][0]) === strDataInicial) {
       mapaSintetico[setor].inicio += qtd;
       mapaAnalitico[statusCompleto].inicio += qtd;
     }
-    if (formatarData(dadosHist[i][0]) === strDataAtual) {
+    if (formatarData(dadosHistFiltrados[j][0]) === strDataAtual) {
       mapaSintetico[setor].atual += qtd;
       mapaAnalitico[statusCompleto].atual += qtd;
     }
 
-    // --- Lógica da Visão Temporal (Dia a Dia Macro) ---
     if (datasUnicas.indexOf(dataLinhaStr) === -1) datasUnicas.push(dataLinhaStr);
     if (setoresUnicos.indexOf(setor) === -1) setoresUnicos.push(setor);
 
@@ -79,7 +100,6 @@ function gerarPainelPresidencial() {
     
     mapaEvolucaoTemporal[dataLinhaStr][setor] += qtd;
 
-    // --- Lógica da Visão Temporal Analítica (Específica) ---
     if (!mapaEvolucaoAnalitico[dataLinhaStr]) mapaEvolucaoAnalitico[dataLinhaStr] = {};
     if (statusAlvoAnalitico.indexOf(statusCompleto) !== -1) {
       if (mapaEvolucaoAnalitico[dataLinhaStr][statusCompleto] === undefined) {
@@ -89,7 +109,7 @@ function gerarPainelPresidencial() {
     }
   }
 
-  // Monta a Matriz de Dados para o Gráfico de Linhas Macro (Sintético)
+  // Monta a Matriz de Dados
   var matrizLinhas = [];
   var cabecalhoLinhas = ["Data"].concat(setoresUnicos);
   matrizLinhas.push(cabecalhoLinhas);
@@ -102,7 +122,6 @@ function gerarPainelPresidencial() {
     matrizLinhas.push(linhaArr);
   }
 
-  // Monta a Matriz de Dados para o Gráfico de Linhas Analítico (Micro)
   var matrizLinhasAnalitico = [];
   var cabecalhoAnalitico = ["Data"].concat(statusAlvoAnalitico);
   matrizLinhasAnalitico.push(cabecalhoAnalitico);
@@ -115,14 +134,13 @@ function gerarPainelPresidencial() {
     matrizLinhasAnalitico.push(linhaArrAnalitico);
   }
 
-  // 3. Contar Itens Resolvidos
   var totalResolvidos = 0;
   if (guiaResolvidos) {
     totalResolvidos = guiaResolvidos.getLastRow() - 1;
     if (totalResolvidos < 0) totalResolvidos = 0;
   }
 
-  // 4. Construtor das guias de Colunas e Linhas (Sintética e Analítica)
+  // 4. Construtor das guias
   function construirGuiaVisao(nomeGuia, mapaDados, titulo) {
     var guia = ss.getSheetByName(nomeGuia);
     if (!guia) { guia = ss.insertSheet(nomeGuia); } 
@@ -161,30 +179,44 @@ function gerarPainelPresidencial() {
         var rangeDadosGrafico = guia.getRange(50, 7, matrizLinhasAnalitico.length, matrizLinhasAnalitico[0].length);
         rangeDadosGrafico.setValues(matrizLinhasAnalitico);
 
+        // Configura rótulos de dados forçando a injeção do nome da legenda de volta
+        var seriesLabelAnalitico = {};
+        for (var sa = 0; sa < statusAlvoAnalitico.length; sa++) {
+          seriesLabelAnalitico[sa] = { 
+            dataLabel: 'value',
+            labelInLegend: statusAlvoAnalitico[sa],
+            label: statusAlvoAnalitico[sa]
+          };
+        }
+
         var graficoLinhaAnalitico = guia.newChart()
-          .setChartType(Charts.ChartType.LINE)
+          .asLineChart() // Usando construtor nativo de linha
           .addRange(rangeDadosGrafico)
           .setPosition(5, 7, 0, 0)
-          .setOption('title', 'Evolução Temporal dos Status Selecionados')
+          .setTitle('Evolução Temporal dos Status Selecionados')
           .setOption('width', 900)
           .setOption('height', 450)
-          .setOption('legend', {position: 'right', textStyle: {color: '#2c3e50', fontSize: 12}})
-          .setOption('pointSize', 7)
-          .setOption('curveType', 'function')
+          .setLegendPosition(Charts.Position.TOP) // Força legenda pro TOPO nativamente
+          .setPointStyle(Charts.PointStyle.MEDIUM) // Bolinhas nativas
+          .setCurveStyle(Charts.CurveStyle.SMOOTH) // Curva suave nativa
+          .setOption('series', seriesLabelAnalitico) // Ativa os números
+          .setOption('useFirstColumnAsDomain', true) // Força o reconhecimento do eixo X e Cabeçalhos
+          .setOption('hAxis', { showTextEvery: 1, slantedText: true, slantedTextAngle: 45 }) 
           .build();
         guia.insertChart(graficoLinhaAnalitico);
       } else {
         var rangeGrafico = guia.getRange(5, 2, dadosTabela.length + 1, 3);
         var graficoColuna = guia.newChart()
-          .setChartType(Charts.ChartType.COLUMN)
+          .asColumnChart() // Usando construtor nativo de coluna
           .addRange(rangeGrafico)
           .setPosition(5, 7, 0, 0)
-          .setOption('title', 'Comparativo de Pendências: Início vs Atual')
+          .setTitle('Comparativo de Pendências: Início vs Atual')
           .setOption('width', 700)
           .setOption('height', 400)
-          .setOption('legend', {position: 'bottom'})
-          .setOption('colors', ['#95a5a6', '#e74c3c'])
+          .setLegendPosition(Charts.Position.TOP) // Força legenda pro TOPO
+          .setColors(['#95a5a6', '#e74c3c'])
           .setOption('series', { 0: { dataLabel: 'value' }, 1: { dataLabel: 'value' } })
+          .setOption('useFirstColumnAsDomain', true)
           .build();
         guia.insertChart(graficoColuna);
       }
@@ -208,16 +240,29 @@ function gerarPainelPresidencial() {
     var rangeDados = guia.getRange(50, 2, matrizLinhas.length, matrizLinhas[0].length);
     rangeDados.setValues(matrizLinhas); 
     
+    // Configura rótulos de dados forçando a injeção do nome da legenda
+    var seriesLabelTemporal = {};
+    for (var st = 0; st < setoresUnicos.length; st++) {
+      seriesLabelTemporal[st] = { 
+        dataLabel: 'value',
+        labelInLegend: setoresUnicos[st],
+        label: setoresUnicos[st]
+      };
+    }
+
     var graficoLinhas = guia.newChart()
-        .setChartType(Charts.ChartType.LINE)
+        .asLineChart() // Usando construtor nativo de linha
         .addRange(rangeDados)
         .setPosition(4, 2, 0, 0)
-        .setOption('title', 'Evolução de Pendências (Macro Setores)')
+        .setTitle('Evolução de Pendências (Macro Setores)')
         .setOption('width', 900)
         .setOption('height', 450)
-        .setOption('legend', {position: 'right', textStyle: {color: '#2c3e50', fontSize: 12}}) 
-        .setOption('pointSize', 7) 
-        .setOption('curveType', 'function') 
+        .setLegendPosition(Charts.Position.TOP) // Força legenda pro TOPO
+        .setPointStyle(Charts.PointStyle.MEDIUM) // Bolinhas
+        .setCurveStyle(Charts.CurveStyle.SMOOTH) // Curva suave
+        .setOption('series', seriesLabelTemporal) // Numeração em cada ponto
+        .setOption('useFirstColumnAsDomain', true)
+        .setOption('hAxis', { showTextEvery: 1, slantedText: true, slantedTextAngle: 45 }) 
         .build();
         
     guia.insertChart(graficoLinhas);
@@ -227,5 +272,5 @@ function gerarPainelPresidencial() {
   construirGuiaVisao("Visão_Analítica_MS", mapaAnalitico, "🔍 EVOLUÇÃO MICRO: Por Status Detalhado");
   construirGuiaTemporal();
 
-  ui.alert("Painel Presidencial Completo!", "As 3 guias foram geradas. Confira a legenda e os números agora!", ui.ButtonSet.OK);
+  ui.alert("Painel Presidencial Completo!", "As 3 guias foram geradas. Legendas posicionadas acima dos gráficos e rótulos numéricos ativados em cada marco com correção aplicada!", ui.ButtonSet.OK);
 }
