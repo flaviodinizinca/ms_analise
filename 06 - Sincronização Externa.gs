@@ -10,16 +10,16 @@ function sincronizarDadosGerais() {
     var dadosExternos = guiaDados.getDataRange().getValues();
     var mapaDados = {};
     
-    // 1. Cria o mapa de dados a partir da planilha externa (Estoque)
+    // 1. Cria o mapa de dados a partir da planilha externa (Estoque) - Nova Estrutura 37 Colunas
     for (var i = 1; i < dadosExternos.length; i++) {
-      var itemBruto = dadosExternos[i][1];
+      var itemBruto = dadosExternos[i][1]; // Coluna B (Índice 1) - Item
       if (itemBruto) {
         var itemKey = String(itemBruto).trim().toLowerCase();
-        var saldoAtaAtual = dadosExternos[i][17] !== undefined ? dadosExternos[i][17] : ""; 
-        var vencAtaAtual = dadosExternos[i][19] !== undefined ? dadosExternos[i][19] : "";
+        var saldoAtaAtual = dadosExternos[i][21] !== undefined ? dadosExternos[i][21] : "";  // Coluna V (Índice 21) - SaldoAta
+        var vencAtaAtual = dadosExternos[i][23] !== undefined ? dadosExternos[i][23] : "";   // Coluna X (Índice 23) - DataVencAta
+        var procS = dadosExternos[i][18] !== undefined ? String(dadosExternos[i][18]).trim() : ""; // Coluna S (Índice 18) - NumProcAtaVig
+        var procY = dadosExternos[i][25] !== undefined ? String(dadosExternos[i][25]).trim() : ""; // Coluna Z (Índice 25) - NumProcAnalise
         
-        var procS = dadosExternos[i][18] !== undefined ? String(dadosExternos[i][18]).trim() : "";
-        var procY = dadosExternos[i][24] !== undefined ? String(dadosExternos[i][24]).trim() : "";
         var arrayProc = [];
         if (procS !== "" && procS !== "-") arrayProc.push(procS);
         if (procY !== "" && procY !== "-" && procY !== procS) arrayProc.push(procY);
@@ -27,11 +27,11 @@ function sincronizarDadosGerais() {
         
         if (!mapaDados[itemKey]) {
           mapaDados[itemKey] = {
-            descricao: dadosExternos[i][2] !== undefined ? dadosExternos[i][2] : "",       
-            saldo: dadosExternos[i][7] !== undefined ? dadosExternos[i][7] : 0,            // Coluna H
-            cmm: dadosExternos[i][8] !== undefined ? dadosExternos[i][8] : 0,              // Coluna I
-            saldoDias: dadosExternos[i][10] !== undefined ? dadosExternos[i][10] : "",     // Coluna K
-            cobertura: dadosExternos[i][11] !== undefined ? dadosExternos[i][11] : "",     // Coluna L
+            descricao: dadosExternos[i][2] !== undefined ? dadosExternos[i][2] : "",       // Coluna C (Índice 2)
+            saldo: dadosExternos[i][7] !== undefined ? dadosExternos[i][7] : 0,            // Coluna H (Índice 7)
+            cmm: dadosExternos[i][8] !== undefined ? dadosExternos[i][8] : 0,              // Coluna I (Índice 8)
+            saldoDias: dadosExternos[i][10] !== undefined ? dadosExternos[i][10] : "",     // Coluna K (Índice 10)
+            cobertura: dadosExternos[i][11] !== undefined ? dadosExternos[i][11] : "",     // Coluna L (Índice 11)
             saldoAta: saldoAtaAtual,      
             vencAta: vencAtaAtual,       
             processo: novoProcessoExterno
@@ -66,7 +66,6 @@ function sincronizarDadosGerais() {
     var planilhaCompilados = SpreadsheetApp.openById(idPlanilhaCompilados);
     var guiaCompilados = planilhaCompilados.getSheetByName('Compilados');
     var mapaRecebimento = {};
-
     if (guiaCompilados) {
       var dadosCompilados = guiaCompilados.getDataRange().getValues();
       for (var c = 1; c < dadosCompilados.length; c++) {
@@ -85,7 +84,6 @@ function sincronizarDadosGerais() {
     }
     
     var planilhaLocal = SpreadsheetApp.getActiveSpreadsheet();
-    
     // Carrega o mapa de Prazos lendo a guia CadastroStatus
     var guiaCadastro = planilhaLocal.getSheetByName('CadastroStatus');
     var mapaPrazos = {};
@@ -108,9 +106,8 @@ function sincronizarDadosGerais() {
       var itemLocalBruto = dadosItens[j][0];
       if (itemLocalBruto) {
         var itemLocalKey = String(itemLocalBruto).trim().toLowerCase();
-        
         // Aplica o Prazo na Coluna N (Índice 13), lendo o Status da Coluna J (Índice 9)
-        var statusAtualItem = String(dadosItens[j][9]).trim(); 
+        var statusAtualItem = String(dadosItens[j][9]).trim();
         if (statusAtualItem !== "") {
           var prazoCalculado = mapaPrazos[statusAtualItem.toLowerCase()] !== undefined ? mapaPrazos[statusAtualItem.toLowerCase()] : "";
           guiaItens.getRange(j + 1, 14).setValue(prazoCalculado); // Escreve na Coluna N
@@ -134,17 +131,15 @@ function sincronizarDadosGerais() {
           
           guiaItens.getRange(j + 1, 2).setValue(info.descricao);
           guiaItens.getRange(j + 1, 3).setValue(saldoFinalReal);     // Saldo = Estoque + Recebimento Provisório
-          guiaItens.getRange(j + 1, 4).setValue(info.cmm);       
+          guiaItens.getRange(j + 1, 4).setValue(info.cmm);
           guiaItens.getRange(j + 1, 5).setValue(info.saldoDias); 
           guiaItens.getRange(j + 1, 6).setValue(info.cobertura);
           
           var riscoCalc = obterClassificacaoRisco(saldoFinalReal, cmmFormat);
           guiaItens.getRange(j + 1, 7).setValue(riscoCalc.texto).setBackground(riscoCalc.cor);
-
           var celulaProcesso = guiaItens.getRange(j + 1, 8);
           var processoAtual = String(dadosItens[j][7]).trim();
           var novoProcesso = String(info.processo).trim();
-          
           if (novoProcesso !== "") {
             if (processoAtual === "") {
               celulaProcesso.setValue(novoProcesso).setFontWeight("bold").setFontColor("red");
@@ -167,7 +162,6 @@ function sincronizarDadosGerais() {
                 var textoFinal = processoAtual + '\n' + textoAdicional;
                 var estiloPadrao = SpreadsheetApp.newTextStyle().setBold(false).setForegroundColor("black").build();
                 var estiloDestaque = SpreadsheetApp.newTextStyle().setBold(true).setForegroundColor("red").build();
-                
                 var richText = SpreadsheetApp.newRichTextValue()
                     .setText(textoFinal)
                     .setTextStyle(0, processoAtual.length, estiloPadrao) 
@@ -183,7 +177,6 @@ function sincronizarDadosGerais() {
           
           var celulaDestino = guiaItens.getRange(j + 1, 9);
           var valorAtual = String(celulaDestino.getValue());
-          
           if (saldoFinalReal > 0) {
             celulaDestino.setValue('Sim').setBackground('#d9ead3');
           } else {
@@ -227,11 +220,9 @@ function sincronizarDadosGerais() {
 
     // 4. CHAMA O ARQUIVAMENTO AUTOMÁTICO SE O SALDO (Estoque+Recebimento) SUPERA O CMM
     // Força a planilha a aplicar as edições feitas acima antes de rodar a varredura
-    SpreadsheetApp.flush(); 
-    
+    SpreadsheetApp.flush();
     // Executa a função nativa para varrer os itens e arquivar os que bateram a meta de CMM
     arquivarItensResolvidos();
-    
   } catch (erro) {
     ui.alert('Aviso', 'Erro: ' + erro.message, ui.ButtonSet.OK);
   }
