@@ -27,7 +27,6 @@ function gerarPainelPresidencial() {
     
     var dataComparacao = new Date(dataLinha.getTime());
     dataComparacao.setHours(0,0,0,0);
-
     if (dataComparacao >= dataCorte) {
       dadosHistFiltrados.push(dadosHist[i]);
     }
@@ -52,15 +51,76 @@ function gerarPainelPresidencial() {
   var strDataInicial = formatarData(dataInicial);
   var strDataAtual = formatarData(dataAtual);
 
-  // Status alvo para o Gráfico Analítico em Linhas
-  var statusAlvoAnalitico = [
+  // ====================================================================================
+  // PASSO 1: UNIFICAR MAIÚSCULAS E MINÚSCULAS (Mapeamento Canônico)
+  // ====================================================================================
+  var mapaCanonical = {};
+  
+  // Status alvo bruto para o Gráfico Analítico em Linhas (com a capitalização desejada)
+  var statusAlvoAnaliticoBrutos = [
     "DISUP - Adesão - Pesquisa",
     "DISUP - Assinatura da ATA de SRP",
     "SEAL - Licitação marcada",
+    "SEAL - Marcação de Licitação",
     "SEAL - Pregão em andamento",
     "SECOM - Pesquisa de preços",
     "SECOM - Pesquisa em conclusao"
   ];
+
+  // Força a prioridade de exibição para os itens oficiais do gráfico
+  for (var x = 0; x < statusAlvoAnaliticoBrutos.length; x++) {
+      var upperAlvo = statusAlvoAnaliticoBrutos[x].toUpperCase();
+      mapaCanonical[upperAlvo] = statusAlvoAnaliticoBrutos[x];
+  }
+
+  // Escaneia o histórico para achar todas as variações e priorizar as que têm as letras Maiúsculas corretas
+  for (var y = 0; y < dadosHistFiltrados.length; y++) {
+      var sttBruto = String(dadosHistFiltrados[y][1]).trim();
+      if (sttBruto === "") continue;
+
+      var sttUpper = sttBruto.toUpperCase();
+      
+      if (!mapaCanonical[sttUpper]) {
+          mapaCanonical[sttUpper] = sttBruto;
+      } else {
+          // Se o novo registro tiver mais letras maiúsculas que o salvo, adota o novo como o "bonito/oficial"
+          var maiusculasAtuais = (mapaCanonical[sttUpper].match(/[A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]/g) || []).length;
+          var maiusculasNovas = (sttBruto.match(/[A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]/g) || []).length;
+          if (maiusculasNovas > maiusculasAtuais) {
+              mapaCanonical[sttUpper] = sttBruto;
+          }
+      }
+      
+      // Cadastra também a padronização do nome do departamento (Macro Setor)
+      var sTrBruto = sttBruto;
+      if (sttBruto.indexOf('-') !== -1) {
+        sTrBruto = sttBruto.split('-')[0].trim();
+      }
+      var sTrUpper = sTrBruto.toUpperCase();
+      if (!mapaCanonical[sTrUpper]) {
+          mapaCanonical[sTrUpper] = sTrBruto;
+      } else {
+          var mAtuais = (mapaCanonical[sTrUpper].match(/[A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]/g) || []).length;
+          var mNovas = (sTrBruto.match(/[A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]/g) || []).length;
+          if (mNovas > mAtuais) {
+              mapaCanonical[sTrUpper] = sTrBruto;
+          }
+      }
+  }
+
+  // Função que retorna sempre a versão unificada do status
+  function getNomeCanonical(nome) {
+      var strTratada = String(nome).trim();
+      if (strTratada === "") return "";
+      return mapaCanonical[strTratada.toUpperCase()] || strTratada;
+  }
+
+  // Oficializa a matriz de status que irão para o gráfico de linhas já com o nome unificado
+  var statusAlvoAnalitico = [];
+  for (var z = 0; z < statusAlvoAnaliticoBrutos.length; z++) {
+      statusAlvoAnalitico.push(getNomeCanonical(statusAlvoAnaliticoBrutos[z]));
+  }
+  // ====================================================================================
 
   // 2. Processar os Dados (Sintético, Analítico e Temporal)
   var mapaSintetico = {};
@@ -68,21 +128,26 @@ function gerarPainelPresidencial() {
   var datasUnicas = [];
   var setoresUnicos = [];
   var mapaEvolucaoTemporal = {}; 
-  var mapaEvolucaoAnalitico = {}; 
+  var mapaEvolucaoAnalitico = {};
 
   for (var j = 0; j < dadosHistFiltrados.length; j++) {
     var dataLinhaStr = formatarData(dadosHistFiltrados[j][0]);
-    var statusCompleto = String(dadosHistFiltrados[j][1]).trim();
+    var statusSujo = String(dadosHistFiltrados[j][1]).trim();
+    
+    // Transforma a variação num único texto consolidado, ex: funde "licitação" e "Licitação"
+    var statusCompleto = getNomeCanonical(statusSujo); 
+    
     var qtd = parseBRNumber(dadosHistFiltrados[j][2]);
     
-    var setor = statusCompleto;
+    var setorSujo = statusCompleto;
     if (statusCompleto.indexOf('-') !== -1) {
-      setor = statusCompleto.split('-')[0].trim();
+      setorSujo = statusCompleto.split('-')[0].trim();
     }
+    var setor = getNomeCanonical(setorSujo);
     
     if (!mapaSintetico[setor]) mapaSintetico[setor] = { inicio: 0, atual: 0 };
     if (!mapaAnalitico[statusCompleto]) mapaAnalitico[statusCompleto] = { inicio: 0, atual: 0 };
-    
+
     if (formatarData(dadosHistFiltrados[j][0]) === strDataInicial) {
       mapaSintetico[setor].inicio += qtd;
       mapaAnalitico[statusCompleto].inicio += qtd;
@@ -143,11 +208,14 @@ function gerarPainelPresidencial() {
   // 4. Construtor das guias
   function construirGuiaVisao(nomeGuia, mapaDados, titulo) {
     var guia = ss.getSheetByName(nomeGuia);
-    if (!guia) { guia = ss.insertSheet(nomeGuia); } 
-    else { 
+    if (!guia) { 
+        guia = ss.insertSheet(nomeGuia); 
+    } else { 
       guia.clear();
       var charts = guia.getCharts();
-      for (var c = 0; c < charts.length; c++) { guia.removeChart(charts[c]); }
+      for (var c = 0; c < charts.length; c++) { 
+          guia.removeChart(charts[c]);
+      }
     }
     guia.setHiddenGridlines(true);
 
@@ -157,6 +225,7 @@ function gerarPainelPresidencial() {
 
     var linhaAtual = 6;
     var cabecalhoTabela = ["Departamento / Status", "Início (" + strDataInicial + ")", "Atualmente (" + strDataAtual + ")", "Evolução"];
+    
     guia.getRange(linhaAtual, 2, 1, 4).setValues([cabecalhoTabela]).setFontWeight("bold").setBackground("#4CAF50").setFontColor("white");
     linhaAtual++;
 
@@ -169,6 +238,7 @@ function gerarPainelPresidencial() {
       
       if (inicio > 0 || atual > 0) dadosTabela.push([chave, inicio, atual, textoEvolucao]);
     }
+    
     dadosTabela.sort(function(a, b) { return a[0].localeCompare(b[0]); });
     
     if (dadosTabela.length > 0) {
@@ -178,7 +248,7 @@ function gerarPainelPresidencial() {
       if (nomeGuia === "Visão_Analítica_MS") {
         var rangeDadosGrafico = guia.getRange(50, 7, matrizLinhasAnalitico.length, matrizLinhasAnalitico[0].length);
         rangeDadosGrafico.setValues(matrizLinhasAnalitico);
-
+        
         // Configura rótulos de dados forçando a injeção do nome da legenda de volta
         var seriesLabelAnalitico = {};
         for (var sa = 0; sa < statusAlvoAnalitico.length; sa++) {
@@ -203,6 +273,7 @@ function gerarPainelPresidencial() {
           .setOption('useFirstColumnAsDomain', true) // Força o reconhecimento do eixo X e Cabeçalhos
           .setOption('hAxis', { showTextEvery: 1, slantedText: true, slantedTextAngle: 45 }) 
           .build();
+          
         guia.insertChart(graficoLinhaAnalitico);
       } else {
         var rangeGrafico = guia.getRange(5, 2, dadosTabela.length + 1, 3);
@@ -218,6 +289,7 @@ function gerarPainelPresidencial() {
           .setOption('series', { 0: { dataLabel: 'value' }, 1: { dataLabel: 'value' } })
           .setOption('useFirstColumnAsDomain', true)
           .build();
+          
         guia.insertChart(graficoColuna);
       }
     }
@@ -227,16 +299,18 @@ function gerarPainelPresidencial() {
   function construirGuiaTemporal() {
     var nomeGuia = "Visão_Temporal_MS";
     var guia = ss.getSheetByName(nomeGuia);
-    if (!guia) { guia = ss.insertSheet(nomeGuia); } 
-    else { 
-      guia.clear(); 
+    if (!guia) { 
+        guia = ss.insertSheet(nomeGuia); 
+    } else { 
+      guia.clear();
       var charts = guia.getCharts();
-      for (var c = 0; c < charts.length; c++) { guia.removeChart(charts[c]); }
+      for (var c = 0; c < charts.length; c++) { 
+          guia.removeChart(charts[c]);
+      }
     }
     guia.setHiddenGridlines(true);
     
     guia.getRange("B2").setValue("📈 HISTÓRICO DIA A DIA (Curva de Processos por Setor)").setFontWeight("bold").setFontSize(14).setFontColor("#2c3e50");
-    
     var rangeDados = guia.getRange(50, 2, matrizLinhas.length, matrizLinhas[0].length);
     rangeDados.setValues(matrizLinhas); 
     
@@ -272,5 +346,5 @@ function gerarPainelPresidencial() {
   construirGuiaVisao("Visão_Analítica_MS", mapaAnalitico, "🔍 EVOLUÇÃO MICRO: Por Status Detalhado");
   construirGuiaTemporal();
 
-  ui.alert("Painel Presidencial Completo!", "As 3 guias foram geradas. Legendas posicionadas acima dos gráficos e rótulos numéricos ativados em cada marco com correção aplicada!", ui.ButtonSet.OK);
+  ui.alert("Painel Presidencial Completo!", "As 3 guias foram geradas. Variações de maiúsculas/minúsculas foram consolidadas em linhas únicas com sucesso!", ui.ButtonSet.OK);
 }
